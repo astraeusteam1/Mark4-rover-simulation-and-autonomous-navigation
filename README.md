@@ -93,4 +93,102 @@ Follow these steps on a terminal running **Ubuntu 24.04 LTS** (native installati
 If you do not have ROS 2 Jazzy installed yet, run the following commands to configure the official repositories and install the desktop distribution:
 
 ```bash
-sudo apt update && sudo apt install -y locales curl
+sudo apt update && sudo apt install -y locales curl software-properties-common
+sudo locale-gen en_US en_US.UTF-8
+sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+
+sudo add-apt-repository universe -y
+sudo curl -sSL [https://raw.githubusercontent.com/ros/rosdistro/master/ros.key](https://raw.githubusercontent.com/ros/rosdistro/master/ros.key) -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] [http://packages.ros.org/ros2/ubuntu](http://packages.ros.org/ros2/ubuntu) $(. /etc/os-release && echo$UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+sudo apt update
+sudo apt install -y ros-jazzy-desktop python3-colcon-common-extensions python3-rosdep git
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Step 2: Install Gazebo Harmonic & Navigation Dependencies
+Install the simulation bridge, Xacro processor, vision messages, and Nav2 stack:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  ros-jazzy-ros-gz \
+  ros-jazzy-xacro \
+  ros-jazzy-joint-state-publisher \
+  ros-jazzy-robot-state-publisher \
+  ros-jazzy-vision-msgs \
+  ros-jazzy-navigation2 \
+  ros-jazzy-nav2-bringup \
+  python3-numpy \
+  python3-opencv
+```
+
+### Step 3: Clone and Build This Repository
+Download the source code into your local workspace and build it using `colcon`:
+
+```bash
+git clone [https://github.com/astraeusteam1/Mark4-rover-simulation-and-autonomous-navigation.git](https://github.com/astraeusteam1/Mark4-rover-simulation-and-autonomous-navigation.git) ~/Robot_low_cost
+cd ~/Robot_low_cost
+
+sudo rosdep init 2>/dev/null || true
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+
+colcon build --symlink-install
+echo "source ~/Robot_low_cost/install/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+
+---
+
+## 5. How to Run the Simulation
+
+Open **two separate terminal windows** in Ubuntu:
+
+### Terminal 1: Launch the 3D Gazebo Harmonic Simulation
+```bash
+ros2 launch rover_autonomo_pkg simulacion_marte.launch.py
+```
+*Wait a few seconds until the Gazebo window opens and spawns the Mark 4 rover onto the terrain.*
+
+### Terminal 2: Start Autonomous Navigation & Hazard Detection
+```bash
+ros2 launch rover_autonomo_pkg automatizacion.launch.py
+```
+*The rover will begin exploring autonomously—avoiding rocks, monitoring slopes, and logging terrain hazards.*
+
+### Terminal 3 (Optional): Visualize the Live Map in RViz2 or Run Nav2
+To inspect the `/map` occupancy grid and sensor rays in real time:
+```bash
+rviz2
+```
+1. In the left panel (**Global Options -> Fixed Frame**), set the value to `map`.
+2. Click **Add** (bottom-left) -> **By topic** tab -> add `/map` (**Map**) and `/scan` (**LaserScan**).
+
+To launch goal-based navigation with **Nav2**:
+```bash
+ros2 launch rover_autonomo_pkg Nav2.launch.py
+```
+
+---
+
+## 6. Troubleshooting
+
+* **`Package 'rover_autonomo_pkg' not found` error:** Run `source ~/Robot_low_cost/install/setup.bash` in your active terminal and retry the launch command.
+* **Reset persistent hazard memory:** To clear previously recorded hazards before starting a fresh run:
+  ```bash
+  rm -f ~/Robot_low_cost/mapa_peligros.json
+  ```
+* **Stop lingering Gazebo processes:** Press `Ctrl + C` in all active terminals and run:
+  ```bash
+  pkill -f "gz sim"
+  pkill -f parameter_bridge
+  ```
+
+---
+
+## 7. License
+
+This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file in this repository for full terms and conditions.
