@@ -1,0 +1,15 @@
+# Carpetas generadas por colcon (ROS 2)
+build/
+install/
+log/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Datos dinámicos de simulación y temporales
+mapa_peligros.json
+*.bag
+*.db3
+.DS_Store

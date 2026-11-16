@@ -1,0 +1,571 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mark4">
+
+  <!-- ========================================================================
+       1. ARGUMENTOS
+       ======================================================================== -->
+  <xacro:arg name="steered_wheels"      default="front"/>
+  <xacro:arg name="rockers_fixed"       default="false"/>
+  <xacro:arg name="rocker_differential" default="true"/>
+  <xacro:arg name="default_antenna"     default="true"/>
+  <xacro:arg name="gazebo"              default="true"/>
+
+  <xacro:property name="steered_wheels"      value="$(arg steered_wheels)"/>
+  <xacro:property name="rockers_fixed"       value="$(arg rockers_fixed)"/>
+  <xacro:property name="rocker_differential" value="$(arg rocker_differential)"/>
+
+  <xacro:property name="steer_front"
+                  value="${'true' if (steered_wheels == 'front' or steered_wheels == 'all') else 'false'}"/>
+  <xacro:property name="steer_rear"
+                  value="${'true' if steered_wheels == 'all' else 'false'}"/>
+
+  <!-- ========================================================================
+       2. COTAS
+       ======================================================================== -->
+  <xacro:property name="meshes" value="package://rover_autonomo_pkg/meshes"/>
+  <xacro:property name="mesh_scale" value="0.001 0.001 0.001"/>
+
+  <!-- Ruedas -->
+  <xacro:property name="wheel_radius" value="0.0625"/>
+  <xacro:property name="wheel_width"  value="0.070"/>
+
+  <!-- Chasis -->
+  <xacro:property name="chassis_x" value="0.330"/>
+  <xacro:property name="chassis_y" value="0.200"/>
+  <xacro:property name="chassis_z" value="0.120"/>
+
+  <!-- Pivote de cada rocker respecto al origen de base_link -->
+  <xacro:property name="rocker_x"     value="0.00263"/>
+  <xacro:property name="rocker_y"     value="0.14167"/>
+  <xacro:property name="rocker_z"     value="-0.04731"/>
+  <xacro:property name="rocker_limit" value="0.24"/>
+
+  <!-- Eje de la rueda respecto al origen del rocker -->
+  <xacro:property name="station_x" value="0.15256"/>
+  <xacro:property name="station_y" value="-0.08214"/>
+  <xacro:property name="station_z" value="-0.08802"/>
+
+  <!-- Sistema de giro del servo MG995 -->
+  <xacro:property name="steer_z"      value="-0.00272"/>
+  <xacro:property name="steer_radius" value="0.030"/>
+  <xacro:property name="steer_limit"  value="${pi/2}"/>
+
+  <!-- Desplazamiento del centro de la rueda respecto al eje del servo -->
+  <xacro:property name="wheel_from_steer_x" value="0.0"/>
+  <xacro:property name="wheel_from_steer_y" value="0.0"/>
+
+  <!-- Sensores -->
+  <xacro:property name="camera_xyz"  value="0.0971 0 -0.0427"/>
+  <xacro:property name="camera_rpy"  value="0 0.2094 0"/>
+  <xacro:property name="imu_xyz"     value="0.0628 -0.0314 -0.0393"/>
+  <xacro:property name="antenna_xyz" value="-0.0052 0.056 -0.0065"/>
+
+  <!-- Masas -->
+  <xacro:property name="chassis_mass" value="1.584994"/>
+  <xacro:property name="rocker_mass"  value="1.387336"/>
+  <xacro:property name="wheel_mass"   value="0.283642"/>
+  <xacro:property name="steer_mass"   value="0.180000"/>
+  <xacro:property name="antenna_mass" value="0.001237"/>
+
+  <!-- Actuadores -->
+  <xacro:property name="wheel_effort"   value="2.0"/>
+  <xacro:property name="wheel_velocity" value="6.0"/>
+  <xacro:property name="servo_effort"   value="1.47"/>
+  <xacro:property name="servo_velocity" value="8.2"/>
+
+  <!-- Derivadas -->
+  <xacro:property name="wheel_separation" value="${2*(rocker_y - station_y)}"/>
+  <xacro:property name="wheelbase"        value="${2*station_x}"/>
+  <xacro:property name="wheel_drop"       value="${station_z - steer_z}"/>
+  <xacro:property name="guide_length"     value="${steer_z - station_z}"/>
+  <xacro:property name="chassis_ground"   value="${wheel_radius - rocker_z - station_z}"/>
+
+  <!-- ========================================================================
+       3. MATERIALES
+       ======================================================================== -->
+  <material name="mark4_grey"><color rgba="0.75 0.75 0.78 1.0"/></material>
+  <material name="mark4_dark"><color rgba="0.25 0.25 0.28 1.0"/></material>
+  <material name="mark4_tyre"><color rgba="0.12 0.12 0.12 1.0"/></material>
+
+  <!-- ========================================================================
+       4. MACROS DE INERCIA
+       ======================================================================== -->
+  <xacro:macro name="inertial_cylinder" params="mass radius length *origin">
+    <inertial>
+      <mass value="${mass}"/>
+      <xacro:insert_block name="origin"/>
+      <inertia ixx="${mass*(3*radius*radius + length*length)/12}" ixy="0" ixz="0"
+               iyy="${mass*(3*radius*radius + length*length)/12}" iyz="0"
+               izz="${mass*radius*radius/2}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="inertial_box" params="mass x y z *origin">
+    <inertial>
+      <mass value="${mass}"/>
+      <xacro:insert_block name="origin"/>
+      <inertia ixx="${mass*(y*y + z*z)/12}" ixy="0" ixz="0"
+               iyy="${mass*(x*x + z*z)/12}" iyz="0"
+               izz="${mass*(x*x + y*y)/12}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ========================================================================
+       5. MACROS DE ESLABÓN
+       ======================================================================== -->
+  <xacro:macro name="rocker_link" params="name">
+    <link name="rocker_${name}_link">
+      <xacro:inertial_box mass="${rocker_mass}" x="${2*station_x}" y="0.05" z="0.10">
+        <origin xyz="0 0 ${station_z/2}"/>
+      </xacro:inertial_box>
+      <visual>
+        <geometry><mesh filename="${meshes}/Rocker.stl" scale="${mesh_scale}"/></geometry>
+        <material name="mark4_grey"/>
+      </visual>
+      <collision>
+        <geometry><mesh filename="${meshes}/Rocker_collision.stl" scale="${mesh_scale}"/></geometry>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="steer_link" params="name">
+    <link name="steer_${name}_link">
+      <xacro:inertial_cylinder mass="${steer_mass}" radius="${steer_radius}" length="${guide_length}">
+        <origin xyz="0 0 ${wheel_drop/2}" rpy="0 0 0"/>
+      </xacro:inertial_cylinder>
+      <visual>
+        <geometry><mesh filename="${meshes}/SteerAssembly.stl" scale="${mesh_scale}"/></geometry>
+        <material name="mark4_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${wheel_drop/2}"/>
+        <geometry><cylinder radius="${steer_radius}" length="${guide_length}"/></geometry>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="wheel_link" params="name">
+    <link name="wheel_${name}_link">
+      <xacro:inertial_cylinder mass="${wheel_mass}" radius="${wheel_radius}" length="${wheel_width}">
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </xacro:inertial_cylinder>
+      <visual>
+        <geometry><mesh filename="${meshes}/Wheel.stl" scale="${mesh_scale}"/></geometry>
+        <material name="mark4_tyre"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <!-- ========================================================================
+       6. ESLABONES
+       ======================================================================== -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <xacro:inertial_box mass="${chassis_mass}" x="${chassis_x}" y="${chassis_y}" z="${chassis_z}">
+      <origin xyz="0 0 0"/>
+    </xacro:inertial_box>
+    <visual>
+      <geometry><mesh filename="${meshes}/Chassis.stl" scale="${mesh_scale}"/></geometry>
+      <material name="mark4_grey"/>
+    </visual>
+    <collision>
+      <geometry><mesh filename="${meshes}/Chassis_collision.stl" scale="${mesh_scale}"/></geometry>
+    </collision>
+  </link>
+
+  <xacro:rocker_link name="L"/>
+  <xacro:rocker_link name="R"/>
+
+  <xacro:if value="${steer_front}">
+    <xacro:steer_link name="FL"/>
+    <xacro:steer_link name="FR"/>
+  </xacro:if>
+  <xacro:if value="${steer_rear}">
+    <xacro:steer_link name="RL"/>
+    <xacro:steer_link name="RR"/>
+  </xacro:if>
+
+  <xacro:wheel_link name="FL"/>
+  <xacro:wheel_link name="RL"/>
+  <xacro:wheel_link name="FR"/>
+  <xacro:wheel_link name="RR"/>
+
+  <xacro:if value="$(arg default_antenna)">
+    <link name="antenna_link">
+      <xacro:inertial_cylinder mass="${antenna_mass}" radius="0.0055" length="0.056">
+        <origin xyz="0 0 0.028"/>
+      </xacro:inertial_cylinder>
+      <visual>
+        <origin xyz="0 0 0.028"/>
+        <geometry><cylinder radius="0.0055" length="0.056"/></geometry>
+        <material name="mark4_dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.028"/>
+        <geometry><cylinder radius="0.0055" length="0.056"/></geometry>
+      </collision>
+    </link>
+  </xacro:if>
+
+  <link name="camera_frame"/>
+  <link name="camera_optical_frame"/>
+  <link name="imu_frame"/>
+  <link name="sensor_frontal_link"/>
+  <link name="sensor_precipicio_link"/>
+
+  <!-- ========================================================================
+       7. ARTICULACIONES
+       ======================================================================== -->
+  <joint name="base_joint" type="fixed">
+    <origin xyz="0 0 ${chassis_ground}" rpy="0 0 0"/>
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+  </joint>
+
+  <xacro:if value="${rockers_fixed}">
+    <xacro:property name="rocker_joint_type" value="fixed"/>
+  </xacro:if>
+  <xacro:unless value="${rockers_fixed}">
+    <xacro:property name="rocker_joint_type" value="revolute"/>
+  </xacro:unless>
+
+  <joint name="rocker_L_joint" type="${rocker_joint_type}">
+    <origin xyz="${rocker_x} ${rocker_y} ${rocker_z}" rpy="0 0 ${pi}"/>
+    <parent link="base_link"/>
+    <child  link="rocker_L_link"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100.0" lower="${-rocker_limit}" upper="${rocker_limit}" velocity="100.0"/>
+    <dynamics friction="1.0" damping="0.1"/>
+  </joint>
+
+  <joint name="rocker_R_joint" type="${rocker_joint_type}">
+    <origin xyz="${rocker_x} ${-rocker_y} ${rocker_z}" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="rocker_R_link"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100.0" lower="${-rocker_limit}" upper="${rocker_limit}" velocity="100.0"/>
+    <dynamics friction="1.0" damping="0.1"/>
+    <xacro:unless value="${rockers_fixed}">
+      <xacro:if value="${rocker_differential}">
+        <mimic joint="rocker_L_joint" multiplier="1.0" offset="0.0"/>
+      </xacro:if>
+    </xacro:unless>
+  </joint>
+
+  <xacro:macro name="steer_joint" params="name rocker sx">
+    <joint name="steer_${name}_joint" type="revolute">
+      <origin xyz="${sx} ${station_y} ${steer_z}" rpy="0 0 0"/>
+      <parent link="rocker_${rocker}_link"/>
+      <child  link="steer_${name}_link"/>
+      <axis xyz="0 0 1"/>
+      <limit effort="${servo_effort}" lower="${-steer_limit}" upper="${steer_limit}"
+             velocity="${servo_velocity}"/>
+      <dynamics friction="0.05" damping="0.02"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="wheel_joint" params="name parent_link ox oy oz ay">
+    <joint name="wheel_${name}_joint" type="continuous">
+      <origin xyz="${ox} ${oy} ${oz}" rpy="0 0 0"/>
+      <parent link="${parent_link}"/>
+      <child  link="wheel_${name}_link"/>
+      <axis xyz="0 ${ay} 0"/>
+      <limit effort="${wheel_effort}" velocity="${wheel_velocity}"/>
+      <dynamics friction="0.3125" damping="0.1"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:if value="${steer_front}">
+    <xacro:steer_joint name="FL" rocker="L" sx="${-station_x}"/>
+    <xacro:steer_joint name="FR" rocker="R" sx="${station_x}"/>
+    <xacro:wheel_joint name="FL" parent_link="steer_FL_link" ay="-1"
+                       ox="${wheel_from_steer_x}" oy="${wheel_from_steer_y}" oz="${wheel_drop}"/>
+    <xacro:wheel_joint name="FR" parent_link="steer_FR_link" ay="1"
+                       ox="${wheel_from_steer_x}" oy="${wheel_from_steer_y}" oz="${wheel_drop}"/>
+  </xacro:if>
+  <xacro:unless value="${steer_front}">
+    <xacro:wheel_joint name="FL" parent_link="rocker_L_link" ay="-1"
+                       ox="${-station_x}" oy="${station_y}" oz="${station_z}"/>
+    <xacro:wheel_joint name="FR" parent_link="rocker_R_link" ay="1"
+                       ox="${station_x}"  oy="${station_y}" oz="${station_z}"/>
+  </xacro:unless>
+
+  <xacro:if value="${steer_rear}">
+    <xacro:steer_joint name="RL" rocker="L" sx="${station_x}"/>
+    <xacro:steer_joint name="RR" rocker="R" sx="${-station_x}"/>
+    <xacro:wheel_joint name="RL" parent_link="steer_RL_link" ay="-1"
+                       ox="${wheel_from_steer_x}" oy="${wheel_from_steer_y}" oz="${wheel_drop}"/>
+    <xacro:wheel_joint name="RR" parent_link="steer_RR_link" ay="1"
+                       ox="${wheel_from_steer_x}" oy="${wheel_from_steer_y}" oz="${wheel_drop}"/>
+  </xacro:if>
+  <xacro:unless value="${steer_rear}">
+    <xacro:wheel_joint name="RL" parent_link="rocker_L_link" ay="-1"
+                       ox="${station_x}"  oy="${station_y}" oz="${station_z}"/>
+    <xacro:wheel_joint name="RR" parent_link="rocker_R_link" ay="1"
+                       ox="${-station_x}" oy="${station_y}" oz="${station_z}"/>
+  </xacro:unless>
+
+  <xacro:if value="$(arg default_antenna)">
+    <joint name="antenna_joint" type="fixed">
+      <origin xyz="${antenna_xyz}" rpy="0 0 0"/>
+      <parent link="base_link"/>
+      <child  link="antenna_link"/>
+    </joint>
+  </xacro:if>
+
+  <joint name="camera_joint" type="fixed">
+    <origin xyz="${camera_xyz}" rpy="${camera_rpy}"/>
+    <parent link="base_link"/>
+    <child  link="camera_frame"/>
+  </joint>
+
+  <joint name="camera_optical_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="${-pi/2} 0.0 ${-pi/2}"/>
+    <parent link="camera_frame"/>
+    <child  link="camera_optical_frame"/>
+  </joint>
+
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="${imu_xyz}" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="imu_frame"/>
+  </joint>
+
+  <joint name="sensor_frontal_joint" type="fixed">
+    <origin xyz="0.165 0.0 -0.02" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="sensor_frontal_link"/>
+  </joint>
+
+  <joint name="sensor_precipicio_joint" type="fixed">
+    <origin xyz="0.18 0.0 -0.02" rpy="0 0.85 0"/>
+    <parent link="base_link"/>
+    <child  link="sensor_precipicio_link"/>
+  </joint>
+
+  <!-- ========================================================================
+       8. GAZEBO HARMONIC
+       ======================================================================== -->
+  <xacro:if value="$(arg gazebo)">
+
+    <!-- ===== Sensor Frontal (LiDAR / ToF) ================================= -->
+    <gazebo reference="sensor_frontal_link">
+      <sensor name="sensor_frontal_gz" type="gpu_lidar">
+        <topic>scan</topic>
+        <update_rate>15</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>61</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.26</min_angle>
+              <max_angle>0.26</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>4.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+      </sensor>
+    </gazebo>
+
+    <!-- ===== Sensor de Precipicio (Cliff Sensor hacia el suelo) ============ -->
+    <gazebo reference="sensor_precipicio_link">
+      <sensor name="sensor_precipicio_gz" type="gpu_lidar">
+        <topic>scan_precipicio</topic>
+        <update_rate>20</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>3</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.05</min_angle>
+              <max_angle>0.05</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>2.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+      </sensor>
+    </gazebo>
+
+    <!-- ===== Fricción ===================================================== -->
+    <xacro:macro name="low_friction_surface" params="link">
+      <gazebo reference="${link}">
+        <collision>
+          <surface>
+            <friction>
+              <ode><mu>0.3</mu><mu2>0.3</mu2></ode>
+              <bullet><friction>0.3</friction><friction2>0.3</friction2>
+                      <rolling_friction>0.1</rolling_friction></bullet>
+            </friction>
+          </surface>
+        </collision>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:macro name="wheel_surface" params="link">
+      <gazebo reference="${link}">
+        <collision>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu><mu2>1.0</mu2>
+                <slip1>0.035</slip1><slip2>0</slip2>
+                <fdir1>0 0 1</fdir1>
+              </ode>
+              <bullet><friction>1.0</friction><friction2>1.0</friction2>
+                      <rolling_friction>0.1</rolling_friction></bullet>
+            </friction>
+          </surface>
+        </collision>
+        <visual>
+          <material>
+            <ambient>0.1 0.1 0.1 1</ambient>
+            <diffuse>0.15 0.15 0.15 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:low_friction_surface link="base_link"/>
+    <xacro:low_friction_surface link="rocker_L_link"/>
+    <xacro:low_friction_surface link="rocker_R_link"/>
+
+    <xacro:wheel_surface link="wheel_FL_link"/>
+    <xacro:wheel_surface link="wheel_FR_link"/>
+    <xacro:wheel_surface link="wheel_RL_link"/>
+    <xacro:wheel_surface link="wheel_RR_link"/>
+
+    <!-- ===== Cámara ======================================================= -->
+    <gazebo reference="camera_frame">
+      <sensor name="camera" type="camera">
+        <camera name="mark4_camera">
+          <horizontal_fov>1.9</horizontal_fov>
+          <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+          <clip><near>0.05</near><far>300</far></clip>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.007</stddev></noise>
+          <distortion>
+            <k1>-0.279817</k1><k2>0.060321</k2><k3>0.000487</k3>
+            <p1>0.000310</p1><p2>0.000000</p2>
+            <center>0.5 0.5</center>
+          </distortion>
+          <optical_frame_id>camera_optical_frame</optical_frame_id>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>camera/image_raw</topic>
+        <gz_frame_id>camera_optical_frame</gz_frame_id>
+      </sensor>
+    </gazebo>
+
+    <!-- ===== IMU ========================================================== -->
+    <gazebo reference="imu_frame">
+      <sensor name="mark4_imu" type="imu">
+        <always_on>1</always_on>
+        <update_rate>100</update_rate>
+        <visualize>false</visualize>
+        <topic>imu/data_raw</topic>
+        <gz_frame_id>imu_frame</gz_frame_id>
+        <imu>
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0.0</mean><stddev>0.0003</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0.0</mean><stddev>0.0003</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0.0</mean><stddev>0.0003</stddev></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </gazebo>
+
+    <!-- ===== Plugins ====================================================== -->
+    <gazebo>
+      <plugin filename="gz-sim-joint-state-publisher-system"
+              name="gz::sim::systems::JointStatePublisher">
+        <topic>joint_states</topic>
+      </plugin>
+    </gazebo>
+
+    <gazebo>
+      <plugin filename="gz-sim-diff-drive-system"
+              name="gz::sim::systems::DiffDrive">
+        <left_joint>wheel_FL_joint</left_joint>
+        <left_joint>wheel_RL_joint</left_joint>
+        <right_joint>wheel_FR_joint</right_joint>
+        <right_joint>wheel_RR_joint</right_joint>
+        <wheel_separation>${wheel_separation}</wheel_separation>
+        <wheel_radius>${wheel_radius}</wheel_radius>
+        <topic>cmd_vel</topic>
+        <odom_topic>sim/odom</odom_topic>
+        <tf_topic>sim/tf</tf_topic>
+        <frame_id>odom</frame_id>
+        <child_frame_id>base_footprint</child_frame_id>
+        <odom_publish_frequency>20</odom_publish_frequency>
+        <max_linear_acceleration>2.5</max_linear_acceleration>
+        <min_linear_acceleration>-2.5</min_linear_acceleration>
+        <max_angular_acceleration>3.0</max_angular_acceleration>
+        <min_angular_acceleration>-3.0</min_angular_acceleration>
+      </plugin>
+    </gazebo>
+
+    <xacro:macro name="servo_controller" params="name">
+      <gazebo>
+        <plugin filename="gz-sim-joint-position-controller-system"
+                name="gz::sim::systems::JointPositionController">
+          <joint_name>steer_${name}_joint</joint_name>
+          <topic>steer_${name}/cmd</topic>
+          <p_gain>8.0</p_gain>
+          <i_gain>0.2</i_gain>
+          <d_gain>0.4</d_gain>
+          <i_max>1.0</i_max>
+          <i_min>-1.0</i_min>
+          <cmd_max>${servo_effort}</cmd_max>
+          <cmd_min>${-servo_effort}</cmd_min>
+        </plugin>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:if value="${steer_front}">
+      <xacro:servo_controller name="FL"/>
+      <xacro:servo_controller name="FR"/>
+    </xacro:if>
+    <xacro:if value="${steer_rear}">
+      <xacro:servo_controller name="RL"/>
+      <xacro:servo_controller name="RR"/>
+    </xacro:if>
+
+    <gazebo>
+      <plugin filename="gz-sim-pose-publisher-system"
+              name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <publish_nested_model_pose>false</publish_nested_model_pose>
+        <use_pose_vector_msg>true</use_pose_vector_msg>
+        <update_frequency>20</update_frequency>
+      </plugin>
+    </gazebo>
+
+  </xacro:if>
+
+</robot>
